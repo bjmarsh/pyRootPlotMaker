@@ -4,22 +4,29 @@ import ROOT
 ## plot a stacked histogram of backgrounds
 ## if calling this from another function, must give it a THStack defined in the other
 ## function's scope so it doesn't disappear
-def plotBackgrounds(h_bkg_vec, canvas=None, stack=None, saveAs=None, xRangeUser=None):
+def plotBackgrounds(h_bkg_vec, canvas=None, stack=None, saveAs=None, xRangeUser=None, doPause=False, isLog=True,
+                    xAxisTitle="H_{T}", xAxisUnit="GeV", dataMax=0, userMax=None, userMin=None,doLegend=False, 
+                    bkg_names=None):
     
     if canvas==None:
         canvas = ROOT.TCanvas()
     if stack==None:
         stack = ROOT.THStack()
 
+    if(isLog):
+        canvas.SetLogy(1)
+
     canvas.cd()
 
-    colors = [ROOT.kAzure+7, ROOT.kRed-7, ROOT.kSpring-5, ROOT.kOrange-2,
+    # colors = [ROOT.kAzure+7, ROOT.kRed-7, ROOT.kSpring-5, ROOT.kOrange-2,
+    #           ROOT.kCyan-7, ROOT.kMagenta-4, ROOT.kGray]
+    colors = [ROOT.kAzure+7, ROOT.kSpring-5, ROOT.kOrange-2, ROOT.kRed-7,
               ROOT.kCyan-7, ROOT.kMagenta-4, ROOT.kGray]
 
     nh = len(h_bkg_vec)
     
     for i in range(nh):
-        h_bkg_vec[i].SetFillColor(colors[i])
+        h_bkg_vec[i].SetFillColor(colors[nh-1-i])
         h_bkg_vec[i].SetLineColor(ROOT.kBlack)
     
     for i in range(nh):
@@ -27,17 +34,47 @@ def plotBackgrounds(h_bkg_vec, canvas=None, stack=None, saveAs=None, xRangeUser=
 
     stack.Draw("HIST")
 
-    stack.GetXaxis().SetTitle("H_{T} [GeV]")
     if xRangeUser!=None:
         stack.GetXaxis().SetRangeUser(*xRangeUser)
-    stack.GetYaxis().SetTitle("Entries / {0} GeV".format(h_bkg_vec[0].GetXaxis().GetBinWidth(1)))
-    stack.SetMinimum(1e-1)
+    if xAxisUnit==None:
+        stack.GetXaxis().SetTitle(xAxisTitle)
+        stack.GetYaxis().SetTitle("Events")
+    else:
+        stack.GetXaxis().SetTitle(xAxisTitle + " [{0}]".format(xAxisUnit))
+        stack.GetYaxis().SetTitle("Events / {0} GeV".format(h_bkg_vec[0].GetXaxis().GetBinWidth(1)))
+    stack.GetYaxis().SetTitleOffset(1.2)
+
+    tmax = max(stack.GetMaximum(),dataMax)
+    if isLog:
+        tmin = stack.GetMinimum()
+        if tmin>0:
+            tmin = min(0.1, 0.5*tmin)
+        else:
+            tmin = 0.1
+        stack.SetMinimum(tmin)
+        stack.SetMaximum(tmax**(1.0/0.69))
+    else:
+        stack.SetMaximum(tmax*1.33)
+    if userMax!=None:
+        stack.SetMaximum(userMax)
+    if userMin!=None:
+        stack.SetMinimum(userMin)
+
+    ## legend
+    if doLegend:
+        leg = ROOT.TLegend(0.65,0.71,0.88,0.88)
+        for i in range(len(h_bkg_vec)):
+            leg.AddEntry(h_bkg_vec[-i-1],bkg_names[-i-1],"f")
+        leg.Draw()
 
     if saveAs != None:
         canvas.saveAs(saveAs)
+        
+    if doPause:
+        raw_input()
 
 ## make a ratio plot. For use within the plotDataMC and plotComparison functions
-def plotRatio(h1, h2, canvas=None, ratioHist=None, xRangeUser=None, ratioTitle = "Data/MC", markerSize=0.6):
+def plotRatio(h1, h2, canvas=None, ratioHist=None, xRangeUser=None, ratioTitle = "Data/MC", markerSize=0.7):
 
     if canvas==None:
         canvas = ROOT.TCanvas()
@@ -99,8 +136,9 @@ def plotRatio(h1, h2, canvas=None, ratioHist=None, xRangeUser=None, ratioTitle =
 
 
 ## plot data and stacked background hist. Arguments should be self-explanatory
-def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", doRatio=True, saveAs=None, 
-               isLog=True, dataTitle="Data", xRangeUser=None):
+def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRatio=True, scaleMCtoData=False, saveAs=None, 
+               isLog=True, dataTitle="Data", xRangeUser=None, doPause=False, lumi=1.0, lumiUnit="fb",
+               energy=13, xAxisTitle="H_{T}", xAxisUnit="GeV", userMax=None, userMin=None):
 
     ROOT.gStyle.SetOptStat(0)
      
@@ -134,8 +172,23 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", doRatio=True, save
     pads[0].cd()
 
     ## MC
-    stack = ROOT.THStack("hs",title)
-    plotBackgrounds(h_bkg_vec, canvas=pads[0], stack=stack, xRangeUser=xRangeUser)
+    integrals = [h.Integral(0,-1) for h in h_bkg_vec]
+    zipped = zip(h_bkg_vec,bkg_names)
+    sorted_bkg = [x for (y,x) in sorted(zip(integrals,zipped))]
+    h_bkg_vec = [x for (x,y) in sorted_bkg]
+    bkg_names = [y for (x,y) in sorted_bkg]
+
+    scaleFactor = 1.0
+    if(scaleMCtoData):
+        tot_MC_integral = sum(integrals)
+        data_integral = h_data.Integral(0,-1)
+        scaleFactor = data_integral/tot_MC_integral
+    for i in range(len(h_bkg_vec)):
+        h_bkg_vec[i].Scale(scaleFactor)
+
+    stack = ROOT.THStack("hs","")
+    plotBackgrounds(h_bkg_vec, canvas=pads[0], stack=stack, xRangeUser=xRangeUser, isLog=isLog, xAxisTitle=xAxisTitle,
+                    xAxisUnit=xAxisUnit, dataMax=h_data.GetMaximum(), userMax=userMax, userMin=userMin)
 
     ## data
     h_data.SetMarkerStyle(20)
@@ -148,12 +201,38 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", doRatio=True, save
     h_data.Draw("SAME")
 
     ## legend
-    leg = ROOT.TLegend(0.7,0.7,0.88,0.85)
+    leg = ROOT.TLegend(0.65,0.71,0.88,0.88)
     for i in range(len(h_bkg_vec)):
-        leg.AddEntry(h_bkg_vec[i],bkg_names[i],"f")
+        leg.AddEntry(h_bkg_vec[-i-1],bkg_names[-i-1],"f")
     leg.AddEntry(h_data,dataTitle)
     leg.Draw()
-
+    
+    # title
+    text = ROOT.TLatex()
+    text.SetNDC(1)
+    text.SetTextAlign(13)
+    text.SetTextFont(42)
+    text.SetTextSize(0.040)
+    text.DrawLatex(0.19,0.88,title)
+    # subtitle
+    text.SetTextFont(42)
+    text.SetTextSize(0.03)
+    text.DrawLatex(0.19,0.825,subTitle)
+    # lumi
+    text.SetTextAlign(31)
+    text.SetTextSize(0.035)
+    text.SetTextFont(42)
+    text.DrawLatex(0.89,0.93,"{0} {1}^{{-1}} ({2} TeV)".format(lumi, lumiUnit, energy))
+    # CMS text
+    text.SetTextAlign(11)
+    text.SetTextFont(62)
+    text.DrawLatex(0.12,0.93,"CMS")
+    #Data/MC integral ratio
+    text.SetTextFont(62)
+    text.SetTextAlign(13)
+    text.SetTextSize(0.03)
+    text.DrawLatex(0.65,0.70,"MC scaled by {0:.2f}".format(scaleFactor))
+    text.DrawLatex(0.65,0.665,"# Data events: {0:d}".format(int(h_data.GetEntries())))
 
     ######## ratio plot ############
     
@@ -168,12 +247,18 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", doRatio=True, save
 
         plotRatio(h1, h_data, canvas=pads[1], ratioHist=ratio, xRangeUser=xRangeUser)
     
+    c.Update()
+    c.SetWindowSize(c.GetWw()+4, c.GetWh()+50)
+
     if saveAs!=None:
         c.SaveAs(saveAs)
 
+    if doPause:
+        raw_input()
+
 ## make a comparison plot between two histograms. Plots both histos on one axis, as well as a ratio plot
 def plotComparison(h1, h2, title="", ratioTitle="Data/MC", h1Title="MC", h2Title="Data", saveAs=None,
-                   size=(700,600), xRangeUser=None, markerSize=0.65):
+                   size=(700,600), xRangeUser=None, markerSize=0.65, doPause=False):
 
 
     ROOT.gStyle.SetOptStat(0)
@@ -220,7 +305,8 @@ def plotComparison(h1, h2, title="", ratioTitle="Data/MC", h1Title="MC", h2Title
     if saveAs!=None:
         c.SaveAs(saveAs)
 
-
+    if doPause:
+        raw_input()
 
 
 
