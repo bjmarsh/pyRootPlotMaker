@@ -1,13 +1,13 @@
 import ROOT
-
+import utils
 
 ## plot a stacked histogram of backgrounds
 ## if calling this from another function, must give it a THStack defined in the other
 ## function's scope so it doesn't disappear
-def plotBackgrounds(h_bkg_vec, canvas=None, stack=None, saveAs=None, xRangeUser=None, doPause=False, isLog=True,
-                    xAxisTitle="H_{T}", xAxisUnit="GeV", dataMax=0, userMax=None, userMin=None,doLegend=False, 
-                    bkg_names=None):
-    
+def plotBackgrounds(h_bkg_vec, bkg_names, canvas=None, stack=None, saveAs=None, xRangeUser=None, doPause=False, 
+                    isLog=True, xAxisTitle="H_{T}", xAxisUnit="GeV", dataMax=0, userMax=None, userMin=None,
+                    doLegend=False, doMT2Colors=False):
+
     if canvas==None:
         canvas = ROOT.TCanvas()
     if stack==None:
@@ -18,15 +18,16 @@ def plotBackgrounds(h_bkg_vec, canvas=None, stack=None, saveAs=None, xRangeUser=
 
     canvas.cd()
 
-    # colors = [ROOT.kAzure+7, ROOT.kRed-7, ROOT.kSpring-5, ROOT.kOrange-2,
-    #           ROOT.kCyan-7, ROOT.kMagenta-4, ROOT.kGray]
     colors = [ROOT.kAzure+7, ROOT.kSpring-5, ROOT.kOrange-2, ROOT.kRed-7,
-              ROOT.kCyan-7, ROOT.kMagenta-4, ROOT.kGray]
+              ROOT.kCyan-7, ROOT.kMagenta-7, ROOT.kGray]
 
     nh = len(h_bkg_vec)
     
     for i in range(nh):
-        h_bkg_vec[i].SetFillColor(colors[nh-1-i])
+        if doMT2Colors:
+            h_bkg_vec[i].SetFillColor(utils.getMT2Color(bkg_names[i]))
+        else:
+            h_bkg_vec[i].SetFillColor(colors[nh-1-i])
         h_bkg_vec[i].SetLineColor(ROOT.kBlack)
     
     for i in range(nh):
@@ -44,17 +45,7 @@ def plotBackgrounds(h_bkg_vec, canvas=None, stack=None, saveAs=None, xRangeUser=
         stack.GetYaxis().SetTitle("Events / {0} GeV".format(h_bkg_vec[0].GetXaxis().GetBinWidth(1)))
     stack.GetYaxis().SetTitleOffset(1.2)
 
-    tmax = max(stack.GetMaximum(),dataMax)
-    if isLog:
-        tmin = stack.GetMinimum()
-        if tmin>0:
-            tmin = min(0.1, 0.5*tmin)
-        else:
-            tmin = 0.1
-        stack.SetMinimum(tmin)
-        stack.SetMaximum(tmax**(1.0/0.69))
-    else:
-        stack.SetMaximum(tmax*1.33)
+    utils.SetYBounds(stack, stack.GetMaximum(), stack.GetMinimum(), dataMax)
     if userMax!=None:
         stack.SetMaximum(userMax)
     if userMin!=None:
@@ -138,7 +129,8 @@ def plotRatio(h1, h2, canvas=None, ratioHist=None, xRangeUser=None, ratioTitle =
 ## plot data and stacked background hist. Arguments should be self-explanatory
 def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRatio=True, scaleMCtoData=False, saveAs=None, 
                isLog=True, dataTitle="Data", xRangeUser=None, doPause=False, lumi=1.0, lumiUnit="fb",
-               energy=13, xAxisTitle="H_{T}", xAxisUnit="GeV", userMax=None, userMin=None):
+               energy=13, xAxisTitle="H_{T}", xAxisUnit="GeV", userMax=None, userMin=None, doSort=False,
+               doMT2Colors=False):
 
     ROOT.gStyle.SetOptStat(0)
      
@@ -173,10 +165,14 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
 
     ## MC
     integrals = [h.Integral(0,-1) for h in h_bkg_vec]
-    zipped = zip(h_bkg_vec,bkg_names)
-    sorted_bkg = [x for (y,x) in sorted(zip(integrals,zipped))]
-    h_bkg_vec = [x for (x,y) in sorted_bkg]
-    bkg_names = [y for (x,y) in sorted_bkg]
+    if doSort:
+        zipped = zip(h_bkg_vec,bkg_names)
+        sorted_bkg = [x for (y,x) in sorted(zip(integrals,zipped))]
+        h_bkg_vec = [x for (x,y) in sorted_bkg]
+        bkg_names = [y for (x,y) in sorted_bkg]
+    else:
+        h_bkg_vec = h_bkg_vec[::-1]
+        bkg_names = bkg_names[::-1]
 
     scaleFactor = 1.0
     if(scaleMCtoData):
@@ -187,8 +183,9 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
         h_bkg_vec[i].Scale(scaleFactor)
 
     stack = ROOT.THStack("hs","")
-    plotBackgrounds(h_bkg_vec, canvas=pads[0], stack=stack, xRangeUser=xRangeUser, isLog=isLog, xAxisTitle=xAxisTitle,
-                    xAxisUnit=xAxisUnit, dataMax=h_data.GetMaximum(), userMax=userMax, userMin=userMin)
+    plotBackgrounds(h_bkg_vec, bkg_names, canvas=pads[0], stack=stack, xRangeUser=xRangeUser, isLog=isLog, 
+                    xAxisTitle=xAxisTitle, xAxisUnit=xAxisUnit, dataMax=h_data.GetMaximum(), 
+                    userMax=userMax, userMin=userMin, doMT2Colors=doMT2Colors)
 
     ## data
     h_data.SetMarkerStyle(20)
@@ -233,6 +230,7 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
     text.SetTextSize(0.03)
     text.DrawLatex(0.65,0.70,"MC scaled by {0:.2f}".format(scaleFactor))
     text.DrawLatex(0.65,0.665,"# Data events: {0:d}".format(int(h_data.GetEntries())))
+    #text.DrawLatex(0.65,0.63,"Total # Fakes: {0:.1f}".format(h_bkg_vec[1].Integral(0,-1)))
 
     ######## ratio plot ############
     
