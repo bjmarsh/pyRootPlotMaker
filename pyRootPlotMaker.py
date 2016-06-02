@@ -6,7 +6,7 @@ import utils
 ## function's scope so it doesn't disappear
 def plotBackgrounds(h_bkg_vec, bkg_names, canvas=None, stack=None, saveAs=None, xRangeUser=None, doPause=False, 
                     isLog=True, xAxisTitle="H_{T}", xAxisUnit="GeV", dataMax=0, userMax=None, userMin=None,
-                    doLegend=False, doMT2Colors=False):
+                    doLegend=False, doMT2Colors=False, doOverflow=True):
 
     if canvas==None:
         canvas = ROOT.TCanvas()
@@ -25,11 +25,13 @@ def plotBackgrounds(h_bkg_vec, bkg_names, canvas=None, stack=None, saveAs=None, 
     
     for i in range(nh):
         if doMT2Colors:
-            h_bkg_vec[i].SetFillColor(utils.getMT2Color(bkg_names[i]))
+            h_bkg_vec[i].SetFillColor(utils.GetMT2Color(bkg_names[i]))
         else:
             h_bkg_vec[i].SetFillColor(colors[nh-1-i])
         h_bkg_vec[i].SetLineColor(ROOT.kBlack)
-    
+        if doOverflow:
+            utils.PutOverflowInLastBin(h_bkg_vec[i], None if xRangeUser==None else xRangeUser[1])
+
     for i in range(nh):
         stack.Add(h_bkg_vec[i])
 
@@ -45,7 +47,7 @@ def plotBackgrounds(h_bkg_vec, bkg_names, canvas=None, stack=None, saveAs=None, 
         stack.GetYaxis().SetTitle("Events / {0} GeV".format(h_bkg_vec[0].GetXaxis().GetBinWidth(1)))
     stack.GetYaxis().SetTitleOffset(1.2)
 
-    utils.SetYBounds(stack, stack.GetMaximum(), stack.GetMinimum(), dataMax)
+    utils.SetYBounds(stack, isLog, stack.GetMaximum(), stack.GetMinimum(), dataMax)
     if userMax!=None:
         stack.SetMaximum(userMax)
     if userMin!=None:
@@ -130,7 +132,7 @@ def plotRatio(h1, h2, canvas=None, ratioHist=None, xRangeUser=None, ratioTitle =
 def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRatio=True, scaleMCtoData=False, saveAs=None, 
                isLog=True, dataTitle="Data", xRangeUser=None, doPause=False, lumi=1.0, lumiUnit="fb",
                energy=13, xAxisTitle="H_{T}", xAxisUnit="GeV", userMax=None, userMin=None, doSort=False,
-               doMT2Colors=False):
+               doMT2Colors=False, markerSize=0.9, doOverflow=True):
 
     ROOT.gStyle.SetOptStat(0)
      
@@ -185,15 +187,17 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
     stack = ROOT.THStack("hs","")
     plotBackgrounds(h_bkg_vec, bkg_names, canvas=pads[0], stack=stack, xRangeUser=xRangeUser, isLog=isLog, 
                     xAxisTitle=xAxisTitle, xAxisUnit=xAxisUnit, dataMax=h_data.GetMaximum(), 
-                    userMax=userMax, userMin=userMin, doMT2Colors=doMT2Colors)
+                    userMax=userMax, userMin=userMin, doMT2Colors=doMT2Colors, doOverflow=doOverflow)
 
     ## data
     h_data.SetMarkerStyle(20)
-    h_data.SetMarkerSize(0.7)
+    h_data.SetMarkerSize(markerSize)
     h_data.SetMarkerColor(ROOT.kBlack)
     h_data.SetLineColor(ROOT.kBlack)
     if xRangeUser!=None:
         h_data.GetXaxis().SetRangeUser(*xRangeUser)
+    if doOverflow:
+        utils.PutOverflowInLastBin(h_data, None if xRangeUser==None else xRangeUser[1])
 
     h_data.Draw("SAME")
 
@@ -223,7 +227,7 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
     # CMS text
     text.SetTextAlign(11)
     text.SetTextFont(62)
-    text.DrawLatex(0.12,0.93,"CMS")
+    text.DrawLatex(0.12,0.93,"CMS Preliminary")
     #Data/MC integral ratio
     text.SetTextFont(62)
     text.SetTextAlign(13)
@@ -243,7 +247,7 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
             h1.Add(h_bkg_vec[i+1])
         ratio = ROOT.TH1F()
 
-        plotRatio(h1, h_data, canvas=pads[1], ratioHist=ratio, xRangeUser=xRangeUser)
+        plotRatio(h1, h_data, canvas=pads[1], ratioHist=ratio, xRangeUser=xRangeUser, markerSize=markerSize)
     
     c.Update()
     c.SetWindowSize(c.GetWw()+4, c.GetWh()+50)
