@@ -1,5 +1,5 @@
 import ROOT
-import utils
+import ppmUtils as utils
 
 ## plot a stacked histogram of backgrounds
 ## if calling this from another function, must give it a THStack defined in the other
@@ -47,7 +47,8 @@ def plotBackgrounds(h_bkg_vec, bkg_names, canvas=None, stack=None, saveAs=None, 
         stack.GetYaxis().SetTitle("Events / {0} GeV".format(h_bkg_vec[0].GetXaxis().GetBinWidth(1)))
     stack.GetYaxis().SetTitleOffset(1.2)
 
-    utils.SetYBounds(stack, isLog, stack.GetMaximum(), stack.GetMinimum(), dataMax)
+    #utils.SetYBounds(stack, isLog, stack.GetMaximum(), stack.GetMinimum(), dataMax)
+    utils.SetYBounds(stack, isLog, h_bkg_vec, dataMax, xRangeUser)
     if userMax!=None:
         stack.SetMaximum(userMax)
     if userMin!=None:
@@ -129,10 +130,10 @@ def plotRatio(h1, h2, canvas=None, ratioHist=None, xRangeUser=None, ratioTitle =
 
 
 ## plot data and stacked background hist. Arguments should be self-explanatory
-def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRatio=True, scaleMCtoData=False, saveAs=None, 
+def plotDataMC(h_bkg_vec, bkg_names, h_data, title=None, subtitles=None, doRatio=True, scaleMCtoData=False, saveAs=None, 
                isLog=True, dataTitle="Data", xRangeUser=None, doPause=False, lumi=1.0, lumiUnit="fb",
                energy=13, xAxisTitle="H_{T}", xAxisUnit="GeV", userMax=None, userMin=None, doSort=False,
-               doMT2Colors=False, markerSize=0.9, doOverflow=True):
+               doMT2Colors=False, markerSize=0.9, doOverflow=True, titleSize=0.04, subtitleSize=0.03, subLegText=None):
 
     ROOT.gStyle.SetOptStat(0)
      
@@ -184,9 +185,15 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
     for i in range(len(h_bkg_vec)):
         h_bkg_vec[i].Scale(scaleFactor)
 
+    dataMax = 0
+    for i in range(1,h_data.GetNbinsX()+1):
+        y = h_data.GetBinContent(i)+h_data.GetBinError(i)
+        if y>dataMax:
+            dataMax = y
+
     stack = ROOT.THStack("hs","")
     plotBackgrounds(h_bkg_vec, bkg_names, canvas=pads[0], stack=stack, xRangeUser=xRangeUser, isLog=isLog, 
-                    xAxisTitle=xAxisTitle, xAxisUnit=xAxisUnit, dataMax=h_data.GetMaximum(), 
+                    xAxisTitle=xAxisTitle, xAxisUnit=xAxisUnit, dataMax=dataMax, 
                     userMax=userMax, userMin=userMin, doMT2Colors=doMT2Colors, doOverflow=doOverflow)
 
     ## data
@@ -202,23 +209,36 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
     h_data.Draw("SAME")
 
     ## legend
-    leg = ROOT.TLegend(0.65,0.71,0.88,0.88)
+    leg = ROOT.TLegend(0.65,0.72,0.88,0.89)
     for i in range(len(h_bkg_vec)):
         leg.AddEntry(h_bkg_vec[-i-1],bkg_names[-i-1],"f")
     leg.AddEntry(h_data,dataTitle)
     leg.Draw()
     
-    # title
+    # handloe all of the text
     text = ROOT.TLatex()
     text.SetNDC(1)
-    text.SetTextAlign(13)
-    text.SetTextFont(42)
-    text.SetTextSize(0.040)
-    text.DrawLatex(0.19,0.88,title)
+    cursorX = 0.23
+    cursorY = 0.89
+    # title
+    if title!=None and title!="":
+        text.SetTextAlign(13) 
+        text.SetTextFont(42)
+        text.SetTextSize(titleSize)
+        text.DrawLatex(cursorX,cursorY,title)
+        cursorY -= titleSize + 0.010
+    # subtitles
+    if subtitles==None:
+        subtitles=[]
+    if type(subtitles)==type(""):
+        subtitles = [subtitles]
     # subtitle
-    text.SetTextFont(42)
-    text.SetTextSize(0.03)
-    text.DrawLatex(0.19,0.825,subTitle)
+    for s in subtitles:
+        text.SetTextAlign(13)
+        text.SetTextFont(42)
+        text.SetTextSize(0.03)
+        text.DrawLatex(cursorX,cursorY,s)
+        cursorY -= subtitleSize + 0.01
     # lumi
     text.SetTextAlign(31)
     text.SetTextSize(0.035)
@@ -229,12 +249,22 @@ def plotDataMC(h_bkg_vec, bkg_names, h_data, title="Data/MC", subTitle="", doRat
     text.SetTextFont(62)
     text.DrawLatex(0.12,0.93,"CMS Preliminary")
     #Data/MC integral ratio
-    text.SetTextFont(62)
-    text.SetTextAlign(13)
-    text.SetTextSize(0.03)
-    text.DrawLatex(0.65,0.70,"MC scaled by {0:.2f}".format(scaleFactor))
-    text.DrawLatex(0.65,0.665,"# Data events: {0:d}".format(int(h_data.GetEntries())))
-    #text.DrawLatex(0.65,0.63,"Total # Fakes: {0:.1f}".format(h_bkg_vec[1].Integral(0,-1)))
+    cursorX = 0.65
+    cursorY = 0.71
+    if subLegText==None:
+        subLegText=[]
+    if type(subLegText)==type(""):
+        subLegText = [subLegText]
+    for s in subLegText:
+        vals = (scaleFactor,int(h_data.GetEntries()))
+        s = s.replace("{datamcsf}","{0:.2f}")
+        s = s.replace("{ndata}","{1:d}")
+        text.SetTextFont(62)
+        text.SetTextAlign(13)
+        text.SetTextSize(0.03)
+        text.DrawLatex(cursorX,cursorY,s.format(*vals))
+        cursorY -= 0.03+0.005
+
 
     ######## ratio plot ############
     
